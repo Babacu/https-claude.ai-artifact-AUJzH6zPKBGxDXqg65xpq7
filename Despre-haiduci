@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="ro"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Haiducii</title>
+<style>
+:root{color-scheme:dark;--g:#d4a017;--p:#ffe4b5;--c:coral;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+*{box-sizing:border-box}
+body{margin:0;font-family:Georgia,serif;background:linear-gradient(135deg,#2c1810,#8B4513) fixed;color:#f4e4bc;min-height:100vh}
+#app{max-width:980px;margin:6px auto;padding:0 8px 30px}
+header{display:flex;gap:10px;align-items:center;justify-content:space-between;background:#1a0f0a;border:3px solid var(--c);border-radius:2em;padding:10px 16px;flex-wrap:wrap}
+.av{font-size:48px;border:3px double #fff;border-radius:50%;width:80px;height:80px;display:flex;align-items:center;justify-content:center;background:#3b2314}
+.ttl{flex:1;min-width:160px;text-align:center;font-size:2.2em;letter-spacing:.15em;color:var(--g);font-weight:bold;border:3px double var(--c);border-radius:20px;padding:6px;background:#2c1810}
+.ttl small{display:block;font-size:.3em;letter-spacing:.1em;color:#f4e4bc}
+.tl{background:var(--p);border:3px double var(--c);border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:5px;min-width:130px}
+#time{color:red;font-size:1.3em;text-align:center}
+button,select,input{font:inherit;border-radius:6px;border:1px solid #6b4423;padding:7px 10px;margin:3px 2px}
+input,select{background:#fff8ea;color:#222;max-width:100%}
+button{background:#b8860b;color:#fff;border:0;cursor:pointer}
+button:hover{background:var(--g)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.tl button{background:#fff;color:#080808;border:1px solid #333}.tl button:hover{background:#080808;color:#fff}
+.card{background:rgba(0,0,0,.78);border:3px solid var(--c);border-radius:16px;padding:14px;margin-top:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:12px}
+h2{color:var(--g);margin:0 0 8px}h3{margin:6px 0;background:gold;color:#000;border:3px solid var(--c);border-radius:5px;padding:2px 8px;font-weight:400}
+.msg{background:darkgreen;border:2px solid var(--c);border-radius:10px;padding:10px;margin-top:10px}
+.bk{background:#6e1b1b;border:2px solid #ff5555;border-radius:10px;padding:10px;margin:8px 0}
+.bar{height:14px;background:#000;border:1px solid var(--g);border-radius:8px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,#c0392b,#f1c40f,#27ae60)}
+table{width:100%;border-collapse:collapse;font-size:.9em}td,th{border:1px solid #6b4423;padding:4px;text-align:left}
+.sm{font-size:.85em;opacity:.85}.wrap{overflow-x:auto}
+li{margin:3px 0}
+textarea{width:100%;height:150px;background:#000;color:#9f9;font-family:monospace}
+</style></head><body><div id="app"></div>
+<script>
+const KEY='haiducii_v3',ADM='admin123';
+const CUR={RON:'Leu',MDL:'Leu md.',HUF:'Forint',BGN:'Leva',PLN:'Zlot',USD:'Dolar',GBP:'Liră'};
+
+/* ---- PRODUSE: [grad de prelucrare 0–3, consumabil 1/0, preț mediu de referință în S] ---- */
+const PROD={Lemne:[0,0,2],Piatră:[0,0,5],Grâu:[0,0,3],Porumb:[0,0,3],In:[0,0,3],Cânepă:[0,0,3],Lapte:[0,0,4],'Carne crudă':[0,0,6],'Fier brut':[0,0,4],
+ Făină:[1,0,5],Pânză:[1,0,8],'Fier forjat':[1,0,8],Cărămidă:[1,0,7],Slănină:[1,1,8],
+ Brânză:[2,1,9],Pâine:[2,1,6],'Preparate din carne':[2,1,12],Opinci:[2,0,4],Cizme:[2,0,9],Mobilă:[2,0,12],
+ Bordei:[3,0,40],Casă:[3,0,120],Palat:[3,0,400],Binecuvântare:[0,0,5],Consultanță:[0,0,10],Mărfuri:[0,0,8]};
+// energia dată de un bun consumat: proporțională cu gradul de prelucrare și cu valoarea de referință (formulă fixă)
+const GAIN=k=>{const[g,c,r]=PROD[k]||[0,0,0];return c?Math.round((.5*g+r/8)*10)/10:0};
+// bunuri deținute care dau energie pasiv, pe minut (cel mai bun din fiecare categorie)
+const CASA={Bordei:.3,Casă:.6,Palat:1.2}, IMBRACA={Opinci:.1,Cizme:.3};
+const passive=p=>Math.max(0,...Object.keys(CASA).filter(k=>p.inv[k]).map(k=>CASA[k]))+Math.max(0,...Object.keys(IMBRACA).filter(k=>p.inv[k]).map(k=>IMBRACA[k]));
+
+/* ---- MESERII: [clasă, nivel de cost x, produs, minute, materiale per unitate] ---- */
+const ROLES={
+ 'Iobag':{c:'Novici',x:0,o:'Lemne',t:1,i:{}},
+ 'Țăran liber':{c:'Novici',x:1,o:'Piatră',t:1,i:{}},
+ 'Cultivator de grâu':{c:'Agricultori',x:1,o:'Grâu',t:1,i:{}},
+ 'Cultivator de porumb':{c:'Agricultori',x:1,o:'Porumb',t:1,i:{}},
+ 'Cultivator de in':{c:'Agricultori',x:2,o:'In',t:2,i:{}},
+ 'Cultivator de cânepă':{c:'Agricultori',x:2,o:'Cânepă',t:2,i:{}},
+ 'Cioban':{c:'Crescători',x:2,o:'Lapte',t:2,i:{}},
+ 'Porcar':{c:'Crescători',x:2,o:'Carne crudă',t:3,i:{}},
+ 'Văcar':{c:'Crescători',x:2,o:'Brânză',t:2,i:{Lapte:2}},
+ 'Morar':{c:'Meseriași',x:3,o:'Făină',t:2,i:{Grâu:2}},
+ 'Pietrar':{c:'Meseriași',x:3,o:'Cărămidă',t:2,i:{Piatră:2}},
+ 'Zidar':{c:'Meseriași',x:4,o:'Bordei',t:3,i:{Cărămidă:2,Lemne:4}},
+ 'Tâmplar':{c:'Meseriași',x:4,o:'Mobilă',t:3,i:{Lemne:3}},
+ 'Fierar':{c:'Meseriași',x:4,o:'Fier forjat',t:3,i:{'Fier brut':2,Lemne:1}},
+ 'Cizmar':{c:'Meseriași',x:4,o:'Cizme',t:3,i:{Pânză:2,'Fier forjat':1}},
+ 'Cârciumar':{c:'Servicii',x:3,o:'Pâine',t:2,i:{Făină:2}},
+ 'Măcelar':{c:'Servicii',x:4,o:'Preparate din carne',t:2,i:{'Carne crudă':2}},
+ 'Preot':{c:'Preoți',x:5,o:'Binecuvântare',t:2,i:{}},
+ 'Avocat':{c:'Justițiari',x:5,o:'Consultanță',t:2,i:{}},
+ 'Negustor':{c:'Bogătani',x:5,o:'Mărfuri',t:2,i:{}},
+ 'Bancher':{c:'Bogătani',x:6,o:null,t:0,i:{}},
+ 'Boier':{c:'Bogătani',x:7,o:null,t:0,i:{}},
+ 'Haiduc':{c:'Haiduci',x:0,o:null,t:0,i:{}}
+};
+const COST=x=>x*100;
+// Ajutorul lui Vodă pentru iobagii săraci: fond inițial per monedă, ajutor la fiecare oră
+const SEED=500, AJUT_BANI=20, AJUT_PAINE=1, AJUT_PAUZA=36e5, AJUT_PRAG=100;
+
+const $=i=>document.getElementById(i), f=n=>(+n).toFixed(1).replace(/\.0$/,'');
+const esc=s=>String(s).replace(/[&<>"']/g,c=>'&#'+c.charCodeAt(0)+';');
+const today=()=>new Date().toISOString().slice(0,10);
+const V=c=>c=='S'?10:c=='EUR'?100:1, lab=c=>c=='S'?'S':c=='EUR'?'€':c;
+const bs=c=>DB.bs[c]??1;                       // comisionul bursei, în %
+const CURS=['S','EUR',...Object.keys(CUR)];
+const fondV=c=>(DB.voda[c]??=SEED);   // fondul lui Vodă pentru moneda c
+
+function fresh(){return{players:{},market:[],loans:[],voda:{},bs:{},nid:1}}
+function load(){try{const d=JSON.parse(localStorage.getItem(KEY));return d?Object.assign(fresh(),d):fresh()}catch(e){return fresh()}}
+let DB=load(),me=null,view='home',msgT='',adm=false;
+try{me=sessionStorage.getItem('h_me');if(me&&!DB.players[me])me=null}catch(e){}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(DB))}catch(e){}}
+const P=()=>DB.players[me];
+const add=(p,c,a)=>{p.w[c]=(p.w[c]||0)+a};
+const L=(p,t)=>{p.log.unshift(new Date().toLocaleTimeString('ro-RO')+' '+t);p.log.length=Math.min(p.log.length,25)};
+const day=p=>{if(p.vd!=today()){p.vd=today();p.vt={}}};
+const wealth=p=>[p.w,p.vault].reduce((a,o)=>a+Object.entries(o).reduce((s,[c,v])=>s+v*V(c),0),0);
+function S(m){if(m)msgT=m;save();R()}
+function go(v){view=v;msgT='';R()}
+function out(){me=null;try{sessionStorage.removeItem('h_me')}catch(e){}go('home')}
+const ref=()=>{const m=/^#ref-(.+)$/.exec(location.hash);return m?decodeURIComponent(m[1]):''};
+function ok(){if(P().bk){S('Ești în faliment: suplimentați fondul cu Euro sau reîncepeți.');return false}return true}
+function ajutor(){if(!ok())return;const p=P();
+ if(p.role!='Iobag')return S('Ajutorul lui Vodă este doar pentru iobagi.');
+ const left=(p.ajut||0)+AJUT_PAUZA-Date.now();
+ if(left>0)return S('Vodă te va ajuta din nou peste '+Math.ceil(left/6e4)+' min.');
+ if(wealth(p)>=AJUT_PRAG)return S('Ai destui bani; ajutorul e doar pentru cei săraci.');
+ const bani=Math.min(AJUT_BANI,fondV(p.loc));
+ DB.voda[p.loc]=fondV(p.loc)-bani;add(p,p.loc,bani);
+ p.inv['Pâine']=(p.inv['Pâine']||0)+AJUT_PAINE;p.ajut=Date.now();
+ L(p,`Vodă ți-a dat ${f(bani)} ${lab(p.loc)} și ${AJUT_PAINE} pâine`);
+ S(`Vodă te ajută: +${f(bani)} ${lab(p.loc)} și ${AJUT_PAINE} pâine.`+(bani<AJUT_BANI?' Fondul lui Vodă este aproape gol.':''))}
+
+/* ===================== PLATĂ, RATE, FALIMENT ===================== */
+// plătește o sumă; dacă lipsește din moneda cerută, convertește din Euro prin bursă
+function pay(p,c,amt){const have=p.w[c]||0;
+ if(have>=amt){p.w[c]=have-amt;return true}
+ const need=amt-have, eur=need*V(c)/V('EUR')/(1-bs(c)/100);
+ if((p.w.EUR||0)+1e-9<eur)return false;
+ p.w.EUR-=eur; DB.voda.EUR=(DB.voda.EUR||0)+eur-need*V(c)/V('EUR'); p.w[c]=0; return true}
+const overdue=name=>DB.loans.some(x=>x.st=='active'&&x.br==name&&Date.now()>=x.next);
+const owedLoan=name=>DB.loans.find(x=>x.st=='active'&&x.br==name&&Date.now()>=x.next);
+// euro necesari pentru a acoperi rata restantă
+function needEur(p){const Ln=owedLoan(p.name);if(!Ln)return 0;const amt=Ln.owed/Ln.n;
+ const n=(amt-(p.w[Ln.c]||0))*V(Ln.c)/V('EUR')/(1-bs(Ln.c)/100);return Math.max(0,n-(p.w.EUR||0))}
+let redraw=false;
+// rulează o dată pe secundă: plătește ratele scadente, stabilește falimentul, dă energia pasivă
+function settle(){let ch=false;const now=Date.now();
+ for(const Ln of DB.loans){if(Ln.st!='active'||now<Ln.next)continue;
+  const b=DB.players[Ln.br],l=DB.players[Ln.b];
+  if(!b){Ln.st='closed';ch=redraw=true;continue}
+  const amt=Ln.owed/Ln.n;
+  if(pay(b,Ln.c,amt)){if(l)add(l,Ln.c,amt);Ln.k++;Ln.next+=Ln.iv;if(Ln.k>=Ln.n)Ln.st='closed';
+   L(b,`Rată plătită: ${f(amt)} ${lab(Ln.c)} (${Ln.k}/${Ln.n})`);if(l)L(l,`Rată primită de la ${Ln.br}: ${f(amt)} ${lab(Ln.c)}`);
+   ch=redraw=true}}
+ for(const p of Object.values(DB.players)){const bk=overdue(p.name);
+  if(bk!=!!p.bk){p.bk=bk;ch=redraw=true}
+  if(now-(p.lp||0)>=6e4){p.en=Math.min(100,p.en+passive(p));p.lp=now;ch=true;redraw=true}}
+ return ch}
+function closeLoans(name){for(const x of DB.loans){if(x.st=='active'&&(x.br==name||x.b==name))x.st='anulat'}
+ DB.loans=DB.loans.filter(x=>!(x.st=='offer'&&x.b==name))}
+
+/* ===================== RANDARE ===================== */
+function R(){$('app').innerHTML=head()+(msgT?`<div class="msg">${msgT}</div>`:'')+body();msgT=''}
+function head(){const p=me&&P();return`<header><div class="av">${me?(p.role=='Haiduc'?'🗡️':'🛡️'):'👤'}</div><div class="ttl">HAIDUCII<small>joc politico-economic medieval</small></div><div class="tl"><div id="time"></div>${me?`<button onclick="go('dash')">Pagina mea</button><button onclick="out()">Ieșire</button>`:`<button onclick="go('reg')">Înscriere</button><button onclick="go('log')">Autentificare</button>`}<button onclick="go('adm')">Admin</button></div></header>`}
+function body(){if(view=='adm')return admV();if(!me)return view=='reg'?regV():view=='log'?logV():home();return dash()}
+function home(){return`<div class="card"><h2>🏰 Bun venit în Țara lui Vodă!</h2><p>Dacă vă place să vă jucați de-a haiducii, haideți să ne jucăm împreună!</p>${ref()?`<p>Ai fost invitat de <b>${esc(ref())}</b>, care îți va deveni stăpân.</p>`:''}<button onclick="go('reg')">⚔️ Înscriere</button><button onclick="go('log')">Autentificare</button></div>
+<div class="card"><h2>Reguli</h2><ol>
+<li>Începi ca <b>țăran iobag</b> cu 50 lei, o pâine și o meserie simplă (tăierea lemnului).</li>
+<li>Fiecare meserie are o <b>rețetă</b>: transformi materii prime în produse. Lucrul costă 8 energie.</li>
+<li><b>Energia</b> crește doar când consumi bunuri comestibile (pâine, preparate, băuturi), în funcție de gradul de prelucrare. Lemnul, carnea crudă sau fierul nu hrănesc. Locuința și îmbrăcămintea dau energie pasiv.</li>
+<li>Piața e liberă: îți stabilești prețurile. <b>Vodă</b> încasează doar 2% din vânzări, iar stăpânul vânzătorului primește 5–10%.</li>
+<li><b>Bursa</b>: schimbul de monede are comision care crește cu 0,01% la fiecare unitate cumpărată și scade cu 0,01% la fiecare unitate vândută.</li>
+<li><b>Bancherii</b> dau împrumuturi cu dobândă, comision și rate stabilite de ei. Odată acceptat, împrumutul se plătește până la capăt, chiar cu riscul falimentului.</li>
+<li>Falimentul se evită doar prin suplimentarea fondului cu <b>Euro</b>, cu cel puțin suma necesară. Banii rămân în contul tău.</li>
+<li>Respectă ceilalți jucători.</li></ol></div>`}
+function regV(){return`<div class="card"><h2>Înscriere</h2><input id="rn" placeholder="Nume jucător (3-20 litere/cifre)"><br><input id="rp" type="password" placeholder="Parolă (min. 6)"><br><select id="rc">${Object.entries(CUR).map(([k,n])=>`<option value="${k}">${n} (${k})</option>`).join('')}</select><br><input id="rs" placeholder="Stăpân (opțional; gol = Vodă)" value="${esc(ref())}"><br><button onclick="doReg()">Intră în joc</button></div>`}
+function logV(){return`<div class="card"><h2>Autentificare</h2><input id="ln" placeholder="Nume jucător"><br><input id="lp" type="password" placeholder="Parola"><br><button onclick="doLog()">Intră</button></div>`}
+
+function doReg(){const n=$('rn').value.trim(),pw=$('rp').value,sp=$('rs').value.trim();
+ if(!/^[\p{L}\d_-]{3,20}$/u.test(n))return S('Nume invalid');if(DB.players[n])return S('Nume deja folosit');if(pw.length<6)return S('Parola e prea scurtă');
+ if(sp&&!DB.players[sp])return S('Stăpânul „'+esc(sp)+'” nu există');
+ const loc=$('rc').value;
+ DB.players[n]={name:n,pw,loc,sp,role:'Iobag',en:100,lp:Date.now(),w:{[loc]:50,S:0,EUR:0},vault:{},vt:{},vd:today(),inv:{'Pâine':1},job:null,bk:false,log:[],at:Date.now()};
+ me=n;try{sessionStorage.setItem('h_me',n)}catch(e){}view='dash';S('Ai intrat în joc ca țăran iobag. Du-te la Vodă!')}
+function doLog(){const p=DB.players[$('ln').value.trim()];if(!p||p.pw!=$('lp').value)return S('Date incorecte');me=p.name;try{sessionStorage.setItem('h_me',me)}catch(e){}view='dash';S()}
+
+function dash(){const p=P(),r=ROLES[p.role];day(p);
+ const items=Object.entries(p.inv),others=Object.keys(DB.players).filter(x=>x!=me);
+ const opts=CURS.map(c=>`<option value="${c}">${lab(c)}</option>`).join('');
+ const ln=owedLoan(p.name), ne=needEur(p);
+
+ let work;
+ if(p.bk)work=`<p>Ești în faliment: nu poți munci sau tranzacționa.</p>`;
+ else if(p.role=='Haiduc')work=`<p>Jefuiește 25% din banii nedepuși ai unei ținte. Cost: 15 energie.</p><select id="rt">${others.map(o=>`<option>${o}</option>`).join('')}</select><button onclick="rob()">🔪 Jefuiește</button>`;
+ else if(!r.o)work=`<p>Rolul nu produce direct: folosește piața, bursa și împrumuturile.</p>`;
+ else{const q=1+Math.floor(p.en/40);const inp=Object.entries(r.i).map(([k,v])=>`${v*q} × ${k}`).join(', ')||'nimic';
+  work=`<p>Produci: <b>${q} × ${r.o}</b> · durată ${r.t} min · cost 8 energie</p><p class="sm">Materiale: ${inp}.</p>`;
+  if(!p.job)work+=`<button onclick="prod()">🔨 Începe producția</button>`;
+  else if(Date.now()>=p.job.at)work+=`<button onclick="coll()">📦 Colectează ${p.job.q} × ${p.job.o}</button>`;
+  else work+=`În lucru: ${p.job.q} × ${p.job.o} — <b id="jt"></b>`}
+
+ const mk=DB.market.map(o=>`<tr><td>${esc(o.it)}</td><td>${esc(o.s)}</td><td>${f(o.pr)} ${lab(o.c)}</td><td>${o.q}</td><td>${o.s==me?`<button onclick="unsell(${o.id})">Retrage</button>`:`<button onclick="buy(${o.id})" ${p.bk?'disabled':''}>Cumpără 1</button>`}</td></tr>`).join('');
+ const roles=Object.entries(ROLES).filter(([k,x])=>x.x>0).map(([k,x])=>`<button onclick="buyRole('${k}')" ${p.role==k||p.bk?'disabled':''}>${k} · ${COST(x.x)} ${lab(p.loc)}</button>`).join('');
+ const bursa=CURS.map(c=>`<tr><td>${lab(c)}</td><td>${bs(c).toFixed(2)}%</td></tr>`).join('');
+
+ const offers=DB.loans.filter(x=>x.st=='offer').map(x=>{const tot=x.a*(1+(x.r+x.fe)/100);
+  const btn=x.b==me?`<button onclick="cancelOffer(${x.id})">Retrage</button>`:(p.bk||p.role=='Haiduc'?'':`<button onclick="accept(${x.id})">Acceptă</button>`);
+  return `<tr><td>${esc(x.b)}</td><td>${f(x.a)} ${lab(x.c)}</td><td>${x.r}% + ${x.fe}%</td><td>${x.n} rate / ${x.d} min</td><td>${f(tot)} ${lab(x.c)}</td><td>${btn}</td></tr>`}).join('');
+ const mine=DB.loans.filter(x=>x.st=='active'&&(x.br==me||x.b==me)).map(x=>{const left=x.owed-x.k*x.owed/x.n;
+  return `<li>${x.br==me?'Datorie către '+esc(x.b):'Creanță de la '+esc(x.br)}: ${f(left)} ${lab(x.c)} · rata ${x.k}/${x.n}</li>`}).join('');
+ const bancher=p.role=='Bancher'&&!p.bk?`<h3>Oferă împrumut</h3>
+   <input id="la" type="number" min="1" placeholder="sumă" style="width:90px"><select id="lc">${opts}</select>
+   Dobândă <input id="lr" type="number" min="0" value="10" style="width:70px">%
+   Comision <input id="lf" type="number" min="0" value="2" style="width:70px">%
+   Rate <input id="ln2" type="number" min="1" max="12" value="3" style="width:60px">
+   Durată (min) <input id="ld" type="number" min="1" value="60" style="width:80px">
+   <button onclick="offer()">Publică oferta</button>`:'';
+
+ return`<div class="grid">
+<div class="card"><h2>${esc(p.name)} — ${p.role}</h2><div class="sm">Stăpân: ${p.sp?esc(p.sp):'Vodă'}</div>
+ ${p.bk?`<div class="bk">⚠️ Faliment: o rată nu a fost plătită. Suplimentați fondul cu cel puțin <b>${f(ne)} €</b>, sau reîncepeți.</div>`:''}
+ <p>⚡ Energie: ${f(p.en)}/100 <span class="sm">(+${f(passive(p))}/min din locuință și îmbrăcăminte)</span></p><div class="bar"><i style="width:${p.en}%"></i></div>
+ <p>💰 ${Object.entries(p.w).filter(([c,v])=>v>0).map(([c,v])=>f(v)+' '+lab(c)).join(' · ')||'0'}</p>
+ <p class="sm">🏦 Seif: ${Object.entries(p.vault).filter(([c,v])=>v>0).map(([c,v])=>f(v)+' '+lab(c)).join(' · ')||'gol'}</p>
+ <p class="sm">Link de invitare:<br><input readonly style="width:100%" value="${esc(location.href.split('#')[0])}#ref-${p.name}" onclick="this.select()"></p></div>
+<div class="card"><h2>⚒️ Muncă</h2>${work}${p.role=='Iobag'&&!p.bk?`<h3>Sala tronului</h3><p class="sm">Vodă ajută iobagii săraci: ${AJUT_BANI} ${lab(p.loc)} și ${AJUT_PAINE} pâine, o dată pe oră, sub ${AJUT_PRAG} de avere.</p><button onclick="ajutor()">👑 Cere ajutorul lui Vodă</button>`:''}</div></div>
+
+<div class="card"><h2>🎒 Inventar și vânzare</h2>${items.length?items.map(([k,v])=>`<span style="margin-right:8px">${esc(k)} × ${v} ${GAIN(k)?`<button onclick="eat('${esc(k)}')" ${p.bk?'disabled':''}>Consumă (+${GAIN(k)}⚡)</button>`:`<span class="sm">${CASA[k]||IMBRACA[k]?'(dă energie pasiv)':'(nu se consumă)'}</span>`}</span>`).join(''):'<p class="sm">Gol.</p>'}
+${items.length&&!p.bk?`<h3>Pune la vânzare</h3><select id="si">${items.map(([k])=>`<option>${esc(k)}</option>`).join('')}</select><input id="sq" type="number" min="1" value="1" style="width:70px"><input id="sp" type="number" min="0.1" step="0.1" placeholder="preț/buc" style="width:100px"><select id="sc">${opts}</select><button onclick="sell()">Vinde</button>`:''}</div>
+
+<div class="card"><h2>🏪 Piața liberă</h2><div class="wrap"><table><tr><th>Produs</th><th>Vânzător</th><th>Preț</th><th>Buc.</th><th></th></tr>${mk||'<tr><td colspan=5>Nicio ofertă.</td></tr>'}</table></div><p class="sm">Din fiecare vânzare: 2% Vodă + 5–10% stăpânul vânzătorului (după energia stăpânului).</p></div>
+
+<div class="grid">
+<div class="card"><h2>📈 Bursa monedelor</h2>
+ <input id="ca" type="number" min="0" placeholder="sumă" style="width:90px"><select id="cf">${opts}</select>→<select id="ct">${opts}</select>
+ <button onclick="conv()" ${p.bk?'disabled':''}>Schimbă</button>
+ <p class="sm">Comision la cumpărare = comisionul monedei cumpărate. Crește cu 0,01% pe unitate cumpărată și scade cu 0,01% pe unitate vândută.</p>
+ <div class="wrap"><table><tr><th>Monedă</th><th>Comision</th></tr>${bursa}</table></div>
+ <h3>Seif</h3><input id="da" type="number" min="0" placeholder="sumă" style="width:90px"><select id="dc">${opts}</select><button onclick="dep(1)">Depune</button><button onclick="dep(0)">Retrage</button><p class="sm">Doar sumele depuse azi pot fi jefuite.</p></div>
+<div class="card"><h2>🏦 Împrumuturi</h2>${bancher}
+ <h3>Oferte disponibile</h3><div class="wrap"><table><tr><th>Bancher</th><th>Sumă</th><th>Dobândă + comision</th><th>Rate</th><th>Total de plată</th><th></th></tr>${offers||'<tr><td colspan=6>Nicio ofertă.</td></tr>'}</table></div>
+ <h3>Contractele tale</h3><ul>${mine||'<li>—</li>'}</ul></div></div>
+
+<div class="card"><h2>📜 Meserii</h2><p class="sm">Cost de ucenicie: ${COST(1)} ${lab(p.loc)} × nivelul. Banii merg stăpânului, dacă există.</p>${roles}</div>
+<div class="card"><h2>💶 Euro și faliment</h2><p class="sm">Suplimentează fondul cu Euro. Banii rămân în contul tău și se folosesc automat pentru ratele restante.</p>
+ <input id="eu" type="number" min="0.01" step="0.01" value="${ne?f(ne):1}" style="width:90px"> € <button onclick="topup()">Adaugă Euro</button>
+ ${!p.bk&&wealth(p)<1&&!ln?`<h3>Ai pierdut toată averea!</h3><button onclick="restart()">Reia ca iobag</button><button onclick="mkHaiduc()">🗡️ Fă-te haiduc</button>`:''}
+ ${p.bk?`<h3>Faliment</h3><button onclick="restart()">Reia ca iobag</button><button onclick="mkHaiduc()">🗡️ Fă-te haiduc</button>`:''}</div>
+<div class="card"><h2>📖 Jurnal</h2><ul class="sm">${p.log.map(x=>`<li>${esc(x)}</li>`).join('')||'<li>—</li>'}</ul></div>`}
+
+/* ===================== PRODUCȚIE ȘI CONSUM ===================== */
+function prod(){if(!ok())return;const p=P(),r=ROLES[p.role];
+ if(!r.o)return S('Acest rol nu produce.');if(p.en<8)return S('Energie insuficientă.');
+ const q=1+Math.floor(p.en/40);
+ for(const[k,v]of Object.entries(r.i))if((p.inv[k]||0)<v*q)return S(`Lipsesc materiale: ${v*q} × ${k}.`);
+ for(const[k,v]of Object.entries(r.i)){p.inv[k]-=v*q;if(!p.inv[k])delete p.inv[k]}
+ p.en-=8;p.job={o:r.o,q,at:Date.now()+r.t*6e4};L(p,'Ai început producția: '+q+' × '+r.o);S('Producția a început.')}
+function coll(){const p=P();if(!p.job||Date.now()<p.job.at)return;p.inv[p.job.o]=(p.inv[p.job.o]||0)+p.job.q;L(p,'Ai produs '+p.job.q+' × '+p.job.o);p.job=null;S('Produse adăugate în inventar.')}
+function eat(k){if(!ok())return;const p=P(),g=GAIN(k);if(!p.inv[k])return;if(!g)return S('Acest bun nu se consumă direct.');
+ p.inv[k]--;if(!p.inv[k])delete p.inv[k];p.en=Math.min(100,p.en+g);S('Ai consumat '+k+' (+'+g+' energie).')}
+
+/* ===================== PIAȚĂ ===================== */
+function sell(){if(!ok())return;const p=P(),it=$('si').value,q=+$('sq').value,pr=+$('sp').value,c=$('sc').value;
+ if(!(q>=1)||!(pr>0)||(p.inv[it]||0)<q)return S('Date invalide.');
+ p.inv[it]-=q;if(!p.inv[it])delete p.inv[it];DB.market.push({id:DB.nid++,s:me,it,q,pr,c});S('Pus la vânzare.')}
+function unsell(id){const i=DB.market.findIndex(x=>x.id==id),o=DB.market[i];if(!o||o.s!=me)return;const p=P();p.inv[o.it]=(p.inv[o.it]||0)+o.q;DB.market.splice(i,1);S('Retras de pe piață.')}
+function buy(id){if(!ok())return;const p=P(),o=DB.market.find(x=>x.id==id);if(!o)return S('Oferta a dispărut.');
+ if((p.w[o.c]||0)<o.pr)return S('Fonduri insuficiente în '+lab(o.c)+' — schimbă la bursă.');
+ const s=DB.players[o.s],sp=s&&s.sp&&DB.players[s.sp],tv=o.pr*.02,spa=sp?o.pr*(.05+.05*Math.min(100,sp.en)/100):0;
+ p.w[o.c]-=o.pr;p.inv[o.it]=(p.inv[o.it]||0)+1;
+ if(s)add(s,o.c,o.pr-tv-spa);DB.voda[o.c]=(DB.voda[o.c]||0)+tv;
+ if(sp){add(sp,o.c,spa);L(sp,'Bir de la '+s.name+': '+f(spa)+' '+lab(o.c))}
+ if(s)L(s,'Ai vândut '+o.it+' lui '+me+' (net '+f(o.pr-tv-spa)+' '+lab(o.c)+')');L(p,'Ai cumpărat '+o.it);
+ if(--o.q<1)DB.market.splice(DB.market.indexOf(o),1);S('Cumpărat: '+esc(o.it))}
+
+/* ===================== BURSĂ ===================== */
+function conv(){if(!ok())return;const p=P(),a=+$('ca').value,fr=$('cf').value,t=$('ct').value;
+ if(!(a>0)||fr==t||(p.w[fr]||0)<a)return S('Sumă invalidă sau fonduri insuficiente.');
+ const fee=bs(t),g=a*V(fr)/V(t),net=g*(1-fee/100);
+ p.w[fr]-=a;add(p,t,net);DB.voda[t]=(DB.voda[t]||0)+g-net;
+ DB.bs[t]=Math.min(30,bs(t)+0.01*net);      // cumpărare: comisionul crește
+ DB.bs[fr]=Math.max(0.1,bs(fr)-0.01*a);     // vânzare: comisionul scade
+ L(p,`Schimb ${f(a)} ${lab(fr)} → ${f(net)} ${lab(t)}`);S(`Ai primit ${f(net)} ${lab(t)} (comision ${fee.toFixed(2)}%).`)}
+function dep(d){const p=P(),a=+$('da').value,c=$('dc').value;day(p);if(!(a>0))return S('Sumă invalidă.');
+ if(d){if((p.w[c]||0)<a)return S('Fonduri insuficiente.');p.w[c]-=a;p.vault[c]=(p.vault[c]||0)+a;p.vt[c]=(p.vt[c]||0)+a}
+ else{if((p.vault[c]||0)<a)return S('Seif insuficient.');p.vault[c]-=a;p.vt[c]=Math.max(0,(p.vt[c]||0)-a);add(p,c,a)}S('Operațiune efectuată.')}
+
+/* ===================== ÎMPRUMUTURI ===================== */
+function offer(){if(!ok())return;const p=P(),a=+$('la').value,c=$('lc').value,r=+$('lr').value,fe=+$('lf').value,n=Math.floor(+$('ln2').value),d=+$('ld').value;
+ if(p.role!='Bancher')return S('Doar bancherii pot oferi împrumuturi.');
+ if(!(a>0)||!(r>=0&&r<=500)||!(fe>=0&&fe<=50)||!(n>=1&&n<=12)||!(d>=1))return S('Date invalide.');
+ if((p.w[c]||0)<a)return S('Fonduri insuficiente pentru a oferi împrumutul.');
+ DB.loans.push({id:DB.nid++,b:me,a,c,r,fe,n,d,st:'offer'});S('Oferta a fost publicată.')}
+function cancelOffer(id){const i=DB.loans.findIndex(x=>x.id==id&&x.st=='offer'&&x.b==me);if(i<0)return;DB.loans.splice(i,1);S('Oferta a fost retrasă.')}
+function accept(id){if(!ok())return;const p=P(),Ln=DB.loans.find(x=>x.id==id);
+ if(!Ln||Ln.st!='offer')return S('Oferta nu mai există.');
+ if(Ln.b==me)return S('Nu vă puteți împrumuta singur.');
+ if(p.role=='Haiduc')return S('Haiducii nu pot primi împrumuturi.');
+ const l=DB.players[Ln.b];if((l.w[Ln.c]||0)<Ln.a)return S('Bancherul nu mai are fondurile.');
+ l.w[Ln.c]-=Ln.a;add(p,Ln.c,Ln.a);
+ Object.assign(Ln,{st:'active',br:me,owed:Ln.a*(1+(Ln.r+Ln.fe)/100),k:0,iv:Ln.d*6e4/Ln.n});Ln.next=Date.now()+Ln.iv;
+ L(p,`Împrumut de la ${Ln.b}: ${f(Ln.a)} ${lab(Ln.c)}`);L(l,`Ai împrumutat ${f(Ln.a)} ${lab(Ln.c)} lui ${me}`);
+ S('Împrumut acceptat. Ratele se plătesc automat.')}
+
+/* ===================== EURO, FALIMENT, MESERII ===================== */
+function topup(){const a=+$('eu').value;const p=P();if(!(a>0))return S('Sumă invalidă.');
+ add(p,'EUR',a);settle();S(`Ai adăugat ${f(a)} €.`+(p.bk?' Încă în faliment: mai trebuie suplimentare.':' Fondul este acoperit.'))}
+function restart(){const p=P();closeLoans(me);p.role='Iobag';p.en=100;p.w={[p.loc]:50,S:0,EUR:0};p.inv={'Pâine':1};p.vault={};p.vt={};p.job=null;p.bk=false;L(p,'Ai reînceput ca iobag');S('Ai reînceput ca țăran iobag.')}
+function mkHaiduc(){const p=P();closeLoans(me);p.role='Haiduc';p.job=null;p.bk=false;L(p,'Te-ai făcut haiduc');S('Ai fugit în codru: ești haiduc!')}
+function buyRole(n){if(!ok())return;const p=P(),r=ROLES[n],c=COST(r.x);if((p.w[p.loc]||0)<c)return S('Îți trebuie '+c+' '+lab(p.loc)+'.');
+ p.w[p.loc]-=c;const m=p.sp&&DB.players[p.sp];if(m){add(m,p.loc,c);L(m,p.name+' a plătit ucenicia: '+c+' '+lab(p.loc))}
+ p.role=n;p.job=null;L(p,'Ai devenit '+n);S('Ești acum '+n+'.')}
+function rob(){if(!ok())return;const p=P(),t=DB.players[$('rt').value];if(!t)return S('Alege o țintă.');if(p.en<15)return S('Prea puțină energie.');
+ p.en-=15;day(t);const g=[];
+ for(const c in t.w){const a=t.w[c]*.25;if(a>.01){t.w[c]-=a;add(p,c,a);g.push(f(a)+' '+lab(c))}}
+ for(const c in t.vt){const a=Math.min(t.vt[c],t.vault[c]||0)*.25;if(a>.01){t.vault[c]-=a;t.vt[c]-=a;add(p,c,a);g.push(f(a)+' '+lab(c)+' (seif)')}}
+ L(t,'Jefuit de '+me+': '+(g.join(', ')||'nimic'));L(p,'Ai jefuit '+t.name+': '+(g.join(', ')||'nimic'));S('Pradă: '+(g.join(', ')||'nimic'))}
+
+/* ===================== ADMINISTRARE ===================== */
+function admV(){if(!adm)return`<div class="card"><h2>Administrator</h2><input id="ap" type="password" placeholder="Parola admin"><button onclick="if($('ap').value==ADM){adm=true;R()}else S('Parolă greșită')">Intră</button></div>`;
+ const ps=Object.values(DB.players);
+ return`<div class="card"><h2>Fișier global (admin)</h2><p>Visteria lui Vodă: ${Object.entries(DB.voda).map(([c,v])=>f(v)+' '+lab(c)).join(' · ')}</p>
+ <p class="sm">Comisioane bursă: ${CURS.map(c=>lab(c)+' '+bs(c).toFixed(2)+'%').join(' · ')}</p>
+ <div class="wrap"><table><tr><th>Jucător</th><th>Stăpân</th><th>Rol</th><th>⚡</th><th>Portofel</th><th>Seif</th><th>Inventar</th><th>Faliment</th></tr>${ps.map(p=>`<tr><td>${esc(p.name)}</td><td>${esc(p.sp||'Vodă')}</td><td>${p.role}</td><td>${f(p.en)}</td><td>${Object.entries(p.w).map(([c,v])=>f(v)+' '+lab(c)).join(', ')}</td><td>${Object.entries(p.vault).map(([c,v])=>f(v)+' '+lab(c)).join(', ')}</td><td>${Object.entries(p.inv).map(([k,v])=>esc(k)+'×'+v).join(', ')}</td><td>${p.bk?'da':'nu'}</td></tr>`).join('')}</table></div>
+ <h3>Date brute (fără parole)</h3><textarea readonly>${esc(JSON.stringify({...DB,players:Object.fromEntries(ps.map(p=>[p.name,{...p,pw:'***'}]))},null,1))}</textarea><button onclick="adm=false;go('home')">Ieșire admin</button></div>`}
+
+/* ===================== CEAS, CICLU DE JOC ===================== */
+setInterval(()=>{const t=$('time');if(t)t.textContent=new Date().toLocaleTimeString('ro-RO');
+ const j=$('jt');if(j&&me&&P().job){const s=Math.ceil((P().job.at-Date.now())/1000);if(s<=0)return R();j.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+ redraw=false;const ch=settle();
+ if(ch){save();const typing=['INPUT','SELECT','TEXTAREA'].includes(document.activeElement?.tagName);
+  if(redraw&&me&&!typing&&view=='dash')R()}},1000);
+
+if(me)view='dash';else if(ref())view='reg';
+R();
+</script></body></html>
